@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const Event = require('../models/Event');
 const Participant = require('../models/participant');
-
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Adjust file size limit as per your requirement
+});
 router.post('/', async (req, res) => {
     try {
         const { eventName, address, date, photo, categories } = req.body;

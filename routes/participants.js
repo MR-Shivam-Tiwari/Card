@@ -1,6 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const Participant = require('../models/participant');
+const multer = require('multer');
+
+const multerS3 = require('multer-s3');
+const s3Client = require('../config');
+
+const bucketName = process.env.AWS_BUCKET_NAME;
+const upload = multer({
+    storage: multerS3({
+      s3: s3Client,
+      bucket: bucketName,
+      metadata: (req, file, cb) => {
+        cb(null, { fieldName: file.fieldname });
+      },
+      key: (req, file, cb) => {
+        cb(null, Date.now().toString() + '-' + file.originalname);
+      },
+    }),
+  });
+
+
+
+
 
 function generateParticipantId() {
     const length = 5;
@@ -24,21 +46,70 @@ async function generateUniqueParticipantId() {
     }
     return participantId;
 }
+router.post('/bulk-upload', async (req, res) => {
+    const { participants } = req.body;
 
-router.post('/', async (req, res) => {
     try {
-        // Extract data and base64 images from the request body
+        const participantDocs = await Promise.all(participants.map(async participant => {
+            const participantId = await generateUniqueParticipantId();
+            return {
+                participantId,
+                firstName: participant.FirstName,
+                lastName: participant.last,
+                designation: participant.Designation,
+                institute: participant.institute,
+                idCardType: participant.idCardType,
+                backgroundImage: participant.backgroundImage,
+                profilePicture: participant.ProfilePicture,
+                eventId: participant.eventId,
+                eventName: participant.eventName,
+                archive: false 
+            };
+        }));
+
+        const savedParticipants = await Participant.insertMany(participantDocs);
+
+        res.status(201).send(savedParticipants);
+    } catch (error) {
+        console.error('Error in bulk uploading participants:', error);
+        res.status(500).send(error);
+    }
+});
+
+
+
+
+
+
+
+
+
+
+
+router.post('/', upload.fields([
+    { name: 'backgroundImage', maxCount: 1 },
+    { name: 'profilePicture', maxCount: 1 }
+]), async (req, res) => {
+    try {
+        // Extract data from the request body and files
         const {
             firstName,
             lastName,
             designation,
             idCardType,
             institute,
-            backgroundImage,
-            profilePicture,
             eventId,
             eventName
         } = req.body;
+
+        // Extract file paths
+        const backgroundImage = req.files['backgroundImage'] ? req.files['backgroundImage'][0].location : null;
+        const profilePicture = req.files['profilePicture'] ? req.files['profilePicture'][0].location : null;
+
+        // Validate the required fields
+        if (!firstName || !lastName || !designation || !idCardType || !institute || !eventId || !eventName) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
 
         // Generate unique participantId
         const participantId = await generateUniqueParticipantId();
@@ -51,8 +122,8 @@ router.post('/', async (req, res) => {
             designation,
             idCardType,
             institute,
-            backgroundImage,
-            profilePicture,
+            backgroundImage, // URL to background image on S3
+            profilePicture, // URL to profile picture on S3
             eventId,
             eventName
         });
@@ -61,13 +132,15 @@ router.post('/', async (req, res) => {
         const savedParticipant = await participant.save();
 
         // Send back the saved participant object
-        res.status(201).send(savedParticipant);
+        res.status(201).json(savedParticipant);
     } catch (error) {
         // Handle errors
         console.error('Error in creating participant:', error);
-        res.status(400).send(error);
+        res.status(400).json({ error: 'Failed to create participant', details: error.message });
     }
 });
+
+
 
 // Get all participants
 router.get('/', async (req, res) => {
