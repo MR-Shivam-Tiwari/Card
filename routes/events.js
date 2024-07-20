@@ -3,33 +3,50 @@ const router = express.Router();
 const Event = require('../models/Event');
 const Participant = require('../models/participant');
 const multer = require('multer');
-const storage = multer.memoryStorage();
+const multerS3 = require('multer-s3');
+const s3Client = require('../config'); // Ensure this exports the S3 client
+
+const bucketName = process.env.AWS_BUCKET_NAME;
+
 const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // Adjust file size limit as per your requirement
+  limits: { fileSize: 10 * 1024 * 1024 }, // Set file size limit to 10 MB
+  storage: multerS3({
+    s3: s3Client,
+    bucket: bucketName,
+    metadata: (req, file, cb) => {
+      cb(null, { fieldName: file.fieldname });
+    },
+    key: (req, file, cb) => {
+      cb(null, Date.now().toString() + '-' + file.originalname);
+    },
+  }),
 });
-router.post('/', async (req, res) => {
-    try {
-        const { eventName, address, date, photo, categories } = req.body;
 
-        // Assuming categories are sent as an array of strings in req.body.categories
-
-        const newEvent = new Event({
-            eventName,
-            address,
-            date,
-            photoUrl: photo,
-            categories // Assign categories array directly to the new event
-        });
-
-        await newEvent.save();
-        res.status(201).send(newEvent);
-    } catch (error) {
-        console.error('Error creating event:', error);
-        res.status(500).send('Server error');
+router.post('/', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).send('No file uploaded');
     }
-});
 
+    const { eventName, address, date, categories } = req.body;
+
+    const photoUrl = req.file.location;
+
+    const newEvent = new Event({
+      eventName,
+      address,
+      date,
+      photoUrl: photoUrl,
+      categories: JSON.parse(categories), // Parse categories if sent as a JSON string
+    });
+
+    await newEvent.save();
+    res.status(201).send(newEvent);
+  } catch (error) {
+    console.error('Error creating event:', error);
+    res.status(500).send('Server error');
+  }
+});
 
 // GET route to fetch all events
 router.get('/allevent', async (req, res) => {
