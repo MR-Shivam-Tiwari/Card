@@ -1,4 +1,3 @@
-// models/event.js
 const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
@@ -6,6 +5,7 @@ const eventSchema = new mongoose.Schema({
     address: { type: String, required: true },
     date: { type: Date, required: true },
     photoUrl: { type: String },
+    idcardimage: { type: String },
     categories: [{ type: String }],
     archive: { type: Boolean, default: false } // New field for archiving event
 });

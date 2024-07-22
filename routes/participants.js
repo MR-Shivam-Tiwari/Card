@@ -46,35 +46,41 @@ async function generateUniqueParticipantId() {
     }
     return participantId;
 }
-router.post('/bulk-upload', async (req, res) => {
-    const { participants } = req.body;
-
+router.post('/bulk-upload', upload.none(), async (req, res) => {
     try {
-        const participantDocs = await Promise.all(participants.map(async participant => {
-            const participantId = await generateUniqueParticipantId();
-            return {
-                participantId,
-                firstName: participant.FirstName,
-                lastName: participant.last,
-                designation: participant.Designation,
-                institute: participant.institute,
-                idCardType: participant.idCardType,
-                backgroundImage: participant.backgroundImage,
-                profilePicture: participant.ProfilePicture,
-                eventId: participant.eventId,
-                eventName: participant.eventName,
-                archive: false 
-            };
-        }));
-
-        const savedParticipants = await Participant.insertMany(participantDocs);
-
-        res.status(201).send(savedParticipants);
+      const { participants, eventId, eventName, backgroundImage } = req.body;
+  
+      if (!participants || !Array.isArray(JSON.parse(participants))) {
+        return res.status(400).send({ error: "Invalid participants data." });
+      }
+  
+      const parsedParticipants = JSON.parse(participants);
+  
+      const participantDocs = await Promise.all(parsedParticipants.map(async (participant) => {
+        const participantId = await generateUniqueParticipantId();
+        return {
+          participantId,
+          firstName: participant.FirstName,
+          lastName: participant.last,
+          designation: participant.Designation,
+          institute: participant.institute,
+          idCardType: participant.idCardType,
+          backgroundImage,
+          profilePicture: participant.ProfilePicture,
+          eventId,
+          eventName,
+          archive: false,
+        };
+      }));
+  
+      const savedParticipants = await Participant.insertMany(participantDocs);
+  
+      res.status(201).send(savedParticipants);
     } catch (error) {
-        console.error('Error in bulk uploading participants:', error);
-        res.status(500).send(error);
+      console.error('Error in bulk uploading participants:', error);
+      res.status(500).send({ error: "Error uploading participants." });
     }
-});
+  });
 
 
 
@@ -85,11 +91,7 @@ router.post('/bulk-upload', async (req, res) => {
 
 
 
-
-router.post('/', upload.fields([
-    { name: 'backgroundImage', maxCount: 1 },
-    { name: 'profilePicture', maxCount: 1 }
-]), async (req, res) => {
+router.post('/', upload.single('profilePicture'), async (req, res) => {
     try {
         // Extract data from the request body and files
         const {
@@ -99,12 +101,12 @@ router.post('/', upload.fields([
             idCardType,
             institute,
             eventId,
-            eventName
+            eventName,
+            backgroundImage // This should be a URL string
         } = req.body;
 
         // Extract file paths
-        const backgroundImage = req.files['backgroundImage'] ? req.files['backgroundImage'][0].location : null;
-        const profilePicture = req.files['profilePicture'] ? req.files['profilePicture'][0].location : null;
+        const profilePicture = req.file ? req.file.location : null;
 
         // Validate the required fields
         if (!firstName || !lastName || !designation || !idCardType || !institute || !eventId || !eventName) {
@@ -122,7 +124,7 @@ router.post('/', upload.fields([
             designation,
             idCardType,
             institute,
-            backgroundImage, // URL to background image on S3
+            backgroundImage, // URL to background image from request body
             profilePicture, // URL to profile picture on S3
             eventId,
             eventName
@@ -139,6 +141,7 @@ router.post('/', upload.fields([
         res.status(400).json({ error: 'Failed to create participant', details: error.message });
     }
 });
+
 
 
 

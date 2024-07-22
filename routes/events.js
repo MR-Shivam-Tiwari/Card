@@ -9,44 +9,47 @@ const s3Client = require('../config'); // Ensure this exports the S3 client
 const bucketName = process.env.AWS_BUCKET_NAME;
 
 const upload = multer({
-  limits: { fileSize: 10 * 1024 * 1024 }, // Set file size limit to 10 MB
-  storage: multerS3({
-    s3: s3Client,
-    bucket: bucketName,
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      cb(null, Date.now().toString() + '-' + file.originalname);
-    },
-  }),
-});
-
-router.post('/', upload.single('photo'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).send('No file uploaded');
+    limits: { fileSize: 10 * 1024 * 1024 }, // Set file size limit to 10 MB
+    storage: multerS3({
+      s3: s3Client,
+      bucket: bucketName,
+      metadata: (req, file, cb) => {
+        cb(null, { fieldName: file.fieldname });
+      },
+      key: (req, file, cb) => {
+        cb(null, Date.now().toString() + '-' + file.originalname);
+      },
+    }),
+  });
+  
+  router.post('/', upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'idcardimage', maxCount: 1 }]), async (req, res) => {
+    try {
+      const { eventName, address, date, categories } = req.body;
+  
+      // Process the uploaded files
+      const photoFile = req.files['photo'] ? req.files['photo'][0] : null;
+      const idcardimageFile = req.files['idcardimage'] ? req.files['idcardimage'][0] : null;
+  
+      const photoUrl = photoFile ? photoFile.location : null;
+      const idcardimage = idcardimageFile ? idcardimageFile.location : null;
+  
+      const newEvent = new Event({
+        eventName,
+        address,
+        date,
+        photoUrl,
+        idcardimage,
+        categories: JSON.parse(categories), // Parse categories if sent as a JSON string
+      });
+  
+      await newEvent.save();
+      res.status(201).send(newEvent);
+    } catch (error) {
+      console.error('Error creating event:', error);
+      res.status(500).send('Server error');
     }
+  });
 
-    const { eventName, address, date, categories } = req.body;
-
-    const photoUrl = req.file.location;
-
-    const newEvent = new Event({
-      eventName,
-      address,
-      date,
-      photoUrl: photoUrl,
-      categories: JSON.parse(categories), // Parse categories if sent as a JSON string
-    });
-
-    await newEvent.save();
-    res.status(201).send(newEvent);
-  } catch (error) {
-    console.error('Error creating event:', error);
-    res.status(500).send('Server error');
-  }
-});
 
 // GET route to fetch all events
 router.get('/allevent', async (req, res) => {
