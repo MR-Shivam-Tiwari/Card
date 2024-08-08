@@ -293,29 +293,52 @@ router.put('/participant/:id/amenities', async (req, res) => {
 });
 
 
-// Update a participant by ID
-router.patch('/:id', async (req, res) => {
-    const updates = Object.keys(req.body);
-    const allowedUpdates = ['firstName', 'lastName', 'designation', 'idCardType', 'backgroundImage', 'profilePicture', 'eventId', 'eventName'];
-    const isValidOperation = updates.every(update => allowedUpdates.includes(update));
+router.put('/participant/:id', upload.single('profilePicture'), async (req, res) => {
+    const { id } = req.params;
+    const {
+        firstName,
+        lastName,
+        designation,
+        idCardType,
+        institute,
+        eventId,
+        eventName,
+        backgroundImage,
+        amenities
+    } = req.body;
 
-    if (!isValidOperation) {
-        return res.status(400).send({ error: 'Invalid updates!' });
-    }
+    const profilePicture = req.file ? req.file.location : null;
 
     try {
-        const participant = await Participant.findById(req.params.id);
-        if (!participant) {
-            return res.status(404).send();
+        // Find the participant to get current values
+        const existingParticipant = await Participant.findById(id);
+
+        if (!existingParticipant) {
+            return res.status(404).send({ message: 'Participant not found' });
         }
 
-        updates.forEach(update => participant[update] = req.body[update]);
-        await participant.save();
-        res.status(200).send(participant);
+        // Prepare the updates object with existing values where necessary
+        const updates = {
+            ...(firstName !== undefined && { firstName }),
+            ...(lastName !== undefined && { lastName }),
+            ...(designation !== undefined && { designation }),
+            ...(idCardType !== undefined && { idCardType }),
+            ...(institute !== undefined && { institute }),
+            ...(eventId !== undefined && { eventId }),
+            ...(eventName !== undefined && { eventName }),
+            ...(backgroundImage !== undefined && { backgroundImage }),
+            ...(amenities !== undefined && { amenities }),
+            ...(profilePicture && { profilePicture }) // Only add if profilePicture is available
+        };
+
+        const updatedParticipant = await Participant.findByIdAndUpdate(id, { $set: updates }, { new: true });
+
+        res.status(200).send(updatedParticipant);
     } catch (error) {
-        res.status(400).send(error);
+        res.status(500).send({ error: 'Error updating participant', details: error.message });
     }
 });
+
 
 // Delete a participant by ID
 router.delete('/:id', async (req, res) => {
