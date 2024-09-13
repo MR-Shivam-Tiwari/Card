@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const verifyToken  = require('./verifyToken')
 const Participant = require('../models/participant');
+const Token = require('../models/Token');
 const multer = require('multer');
-
+const jwt = require('jsonwebtoken');
 const multerS3 = require('multer-s3');
 const s3Client = require('../config');
-
+const idCardDesignSchema = require('../models/idCardDesignSchema');
+const SECRET_KEY = 'MyNameisShivam';
 const bucketName = process.env.AWS_BUCKET_NAME;
 const upload = multer({
     storage: multerS3({
@@ -19,6 +22,7 @@ const upload = multer({
         },
     }),
 });
+
 
 
 
@@ -100,7 +104,37 @@ router.post('/bulk-upload', upload.none(), async (req, res) => {
 
 
 
+router.get('/verify-token', async (req, res) => {
+    const token = req.headers['authorization'];
 
+    if (!token) {
+        return res.status(401).json({ message: 'No token provided' });
+    }
+
+    try {
+        // Decode token
+        const decoded = jwt.verify(token, SECRET_KEY);
+
+        // Check if token exists in database
+        const tokenDoc = await Token.findOne({ token });
+        if (!tokenDoc) {
+            return res.status(401).json({ message: 'Invalid token' });
+        }
+
+        // Check if eventId matches
+        if (tokenDoc.eventId === decoded.eventId) {
+            return res.status(200).json({
+                message: 'Token is valid',
+                eventId: decoded.eventId,
+                eventName: decoded.eventName
+            });
+        } else {
+            return res.status(401).json({ message: 'Token does not match event' });
+        }
+    } catch (err) {
+        return res.status(401).json({ message: 'Failed to authenticate token' });
+    }
+});
 
 
 
@@ -117,17 +151,19 @@ router.post('/', upload.single('profilePicture'), async (req, res) => {
             institute,
             eventId,
             eventName,
+            email,
             backgroundImage,
             amenities // This should be a JSON object
         } = req.body;
 
         // Extract file paths
         const profilePicture = req.file ? req.file.location : null;
-
+        console.log(firstName, lastName, designation, idCardType, institute, eventId, eventName , email)
         // Validate the required fields
-        if (!firstName || !lastName || !designation || !idCardType || !institute || !eventId || !eventName) {
+        if (!firstName || !lastName || !eventId ) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
+
 
         // Generate unique participantId
         const participantId = await generateUniqueParticipantId();
@@ -149,6 +185,7 @@ router.post('/', upload.single('profilePicture'), async (req, res) => {
             designation,
             idCardType,
             institute,
+            email,
             backgroundImage, // URL to background image from request body
             profilePicture, // URL to profile picture on S3
             eventId,
@@ -167,7 +204,35 @@ router.post('/', upload.single('profilePicture'), async (req, res) => {
         res.status(400).json({ error: 'Failed to create participant', details: error.message });
     }
 });
+router.get('/form-url', verifyToken, (req, res) => {
+    res.status(200).json({ 
+        message: 'Form can be accessed', 
+        eventId: req.eventId, 
+        eventName: req.eventName 
+    });
+});
 
+router.post('/generate-token', async (req, res) => {
+    const { eventId, eventName } = req.body;
+
+    if (!eventId || !eventName) {
+        return res.status(400).json({ error: 'Event ID and Event Name are required' });
+    }
+
+    try {
+        // Generate token
+        const token = jwt.sign({ eventId, eventName }, SECRET_KEY, { expiresIn: '1h' });
+
+        // Save token to database
+        const newToken = new Token({ token, eventId, eventName });
+        await newToken.save();
+
+        res.json({ token });
+    } catch (error) {
+        console.error('Error generating token:', error);
+        res.status(500).json({ error: 'Failed to generate token' });
+    }
+});
 
 
 
@@ -352,5 +417,43 @@ router.delete('/:id', async (req, res) => {
         res.status(500).send({ message: "An error occurred while trying to delete the participant", error: error.message });
     }
 });
+
+router.get('/design/:eventId', async (req, res) => {
+    try {
+      const design = await idCardDesignSchema.findOne({ eventId: req.params.eventId });
+      if (!design) {
+        return res.status(404).json({ message: 'Design settings not found for this event' });
+      }
+      res.json(design);
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  });
+  
+  // Create or update design settings for an event
+  router.post('/design/:eventId', async (req, res) => {
+    try {
+      let design = await idCardDesignSchema.findOne({ eventId: req.params.eventId });
+      if (design) {
+        design.visibility = req.body.visibility;
+        design.backgroundColor = req.body.backgroundColor;
+        design.textColor = req.body.textColor;
+        design.elementStyles = req.body.elementStyles;
+      } else {
+        design = new idCardDesignSchema({
+          eventId: req.params.eventId,
+          visibility: req.body.visibility,
+          backgroundColor: req.body.backgroundColor,
+          textColor: req.body.textColor,
+          elementStyles: req.body.elementStyles
+        });
+      }
+      await design.save();
+      res.json(design);
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  });
+
 
 module.exports = router;

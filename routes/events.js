@@ -5,7 +5,7 @@ const Participant = require('../models/participant');
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const s3Client = require('../config'); // Ensure this exports the S3 client
-
+const mongoose = require('mongoose');
 const bucketName = process.env.AWS_BUCKET_NAME;
 
 const upload = multer({
@@ -177,8 +177,15 @@ router.patch('/archive/:id', async (req, res) => {
 // Edit route to update an event by ID
 router.patch('/edit/:id', upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'idcardimage', maxCount: 1 }]), async (req, res) => {
     try {
+        const eventId = req.params.id;
+
+        // Check if the event ID is valid
+        if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+            return res.status(400).json({ message: 'Invalid event ID' });
+        }
+
         // Retrieve the current event
-        const event = await Event.findById(req.params.id);
+        const event = await Event.findById(eventId);
         if (!event) {
             return res.status(404).json({ message: 'Event not found' });
         }
@@ -223,11 +230,11 @@ router.patch('/edit/:id', upload.fields([{ name: 'photo', maxCount: 1 }, { name:
             photoUrl,
             idcardimage,
             categories: categoriesArray,
-            amenities: amenitiesObject
+            amenities: amenitiesObject,
         };
 
         // Update the event with only the provided fields
-        const updatedEvent = await Event.findByIdAndUpdate(req.params.id, updateFields, { new: true });
+        const updatedEvent = await Event.findByIdAndUpdate(eventId, updateFields, { new: true });
 
         res.json(updatedEvent);
     } catch (error) {
@@ -235,6 +242,7 @@ router.patch('/edit/:id', upload.fields([{ name: 'photo', maxCount: 1 }, { name:
         res.status(500).send('Server error');
     }
 });
+
 
 
 // DELETE route to delete an event by ID

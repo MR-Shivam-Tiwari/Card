@@ -17,6 +17,7 @@ app.use(cors({
     credentials: true,
 }));
 
+
 // Configure body-parser with a larger limit
 app.use(bodyParser.json({ limit: '50mb' })); // Adjust limit as needed
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
